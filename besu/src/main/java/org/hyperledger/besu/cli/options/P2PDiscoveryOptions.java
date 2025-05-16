@@ -94,46 +94,46 @@ public class P2PDiscoveryOptions implements CLIOptions<P2PDiscoveryConfiguration
               + "line-separated enode URLs. Default is a predefined list.",
       split = ",",
       arity = "0..*")
-  void setBootNodes(final List<String> values) {
-    if (values == null || values.isEmpty()) {
-      bootNodes = new ArrayList<>();
-      return;
-    }
-    if (values == null) {
-      bootNodes = null;
-      return;
-    }
-    bootNodes = new ArrayList<>();
+  public final List<String> bootNodes = null;
 
+  /**
+   * Processes bootnode URLs from the provided list, including HTTP/HTTPS URLs that contain
+   * line-separated enodes.
+   *
+   * @param values The raw bootnode values from command line
+   * @return A list of enode URLs
+   */
+  public List<String> processBootnodes(List<String> values) {
+    if (values == null || values.isEmpty()) {
+      return values;
+    }
+
+    List<String> processedBootnodes = new ArrayList<>();
     for (String value : values) {
+      if (value == null || value.trim().isEmpty()) {
+        continue;
+      }
+
       value = value.trim();
       if (value.startsWith("enode://")) {
-        bootNodes.add(value);
+        // Pass through enode URLs without validation - let BesuCommand handle validation
+        processedBootnodes.add(value);
       } else if (value.startsWith("http://") || value.startsWith("https://")) {
-        // If the value is a URL, parse it and extract the enode URL
         try {
-          try {
-            List<String> loadedEnodes = loadEnodeUrlsFromRemoteUrl(value);
-            bootNodes.addAll(loadedEnodes);
-          } catch (final IOException ioException) {
-            throw new CommandLine.ParameterException(
-                new CommandLine(this),
-                "Error loading enode URLs from '" + value + "': " + ioException.getMessage(),
-                ioException);
-          }
-        } catch (final IllegalArgumentException e) {
+          List<String> loadedEnodes = loadEnodeUrlsFromRemoteUrl(value);
+          processedBootnodes.addAll(loadedEnodes);
+        } catch (IOException e) {
           throw new CommandLine.ParameterException(
               new CommandLine(this),
-              "Invalid URL supplied to '--bootnodes': " + value + ". " + e.getMessage());
+              "Error loading enode URLs from URL '" + value + "': " + e.getMessage(),
+              e);
         }
       } else {
-        throw new CommandLine.ParameterException(
-            new CommandLine(this),
-            "Invalid value supplied to '--bootnodes': "
-                + value
-                + ". Must be an enode URL or a valid HTTP/HTTPS URL.");
+
+        processedBootnodes.add(value);
       }
     }
+    return processedBootnodes;
   }
 
   /**
@@ -160,17 +160,6 @@ public class P2PDiscoveryOptions implements CLIOptions<P2PDiscoveryConfiguration
       throw new IOException("No valid enode URLs found at the specified URL");
     }
     return enodes;
-  }
-
-  public List<String> bootNodes = null;
-
-  /**
-   * Gets the list of boot nodes.
-   *
-   * @return The list of boot nodes, or null if none specified.
-   */
-  public List<String> getBootNodes() {
-    return bootNodes;
   }
 
   /** The IP the node advertises to peers for P2P communication. */

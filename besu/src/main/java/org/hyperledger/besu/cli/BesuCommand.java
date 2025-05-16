@@ -2438,7 +2438,9 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
     List<EnodeURL> listBootNodes = null;
     if (p2PDiscoveryOptions.bootNodes != null) {
       try {
-        listBootNodes = buildEnodes(p2PDiscoveryOptions.bootNodes, getEnodeDnsConfiguration());
+        List<String> processedBootnodes =
+            p2PDiscoveryOptions.processBootnodes(p2PDiscoveryOptions.bootNodes);
+        listBootNodes = buildEnodes(processedBootnodes, getEnodeDnsConfiguration());
       } catch (final IllegalArgumentException e) {
         throw new ParameterException(commandLine, e.getMessage());
       }
