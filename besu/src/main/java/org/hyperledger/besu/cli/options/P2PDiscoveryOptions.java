@@ -14,6 +14,16 @@
  */
 package org.hyperledger.besu.cli.options;
 
+import org.hyperledger.besu.cli.DefaultCommandValues;
+import org.hyperledger.besu.cli.converter.PercentageConverter;
+import org.hyperledger.besu.cli.converter.SubnetInfoConverter;
+import org.hyperledger.besu.cli.util.CommandLineUtils;
+import org.hyperledger.besu.ethereum.p2p.discovery.P2PDiscoveryConfiguration;
+import org.hyperledger.besu.ethereum.p2p.peers.EnodeURLImpl;
+import org.hyperledger.besu.util.NetworkUtility;
+import org.hyperledger.besu.util.number.Fraction;
+import org.hyperledger.besu.util.number.Percentage;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -27,20 +37,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.google.common.net.InetAddresses;
 import org.apache.commons.net.util.SubnetUtils;
 import org.apache.tuweni.bytes.Bytes;
-import org.hyperledger.besu.cli.DefaultCommandValues;
-import org.hyperledger.besu.cli.converter.PercentageConverter;
-import org.hyperledger.besu.cli.converter.SubnetInfoConverter;
-import org.hyperledger.besu.cli.util.CommandLineUtils;
-import org.hyperledger.besu.ethereum.p2p.discovery.P2PDiscoveryConfiguration;
-import org.hyperledger.besu.ethereum.p2p.peers.EnodeURLImpl;
-import org.hyperledger.besu.util.NetworkUtility;
-import org.hyperledger.besu.util.number.Fraction;
-import org.hyperledger.besu.util.number.Percentage;
-
-import com.google.common.net.InetAddresses;
-
 import picocli.CommandLine;
 
 /** Command line options for configuring P2P discovery on the node. */
@@ -89,60 +88,66 @@ public class P2PDiscoveryOptions implements CLIOptions<P2PDiscoveryConfiguration
   // NOTE: we have no control over default value here.
   @CommandLine.Option(
       names = {"--bootnodes"},
-      paramLabel = "<enode://id@host:port> or <http url containing enode>",
+      paramLabel = "<enode://id@host:port> or <URL>",
       description =
-          "Comma separated enode URLs for P2P discovery bootstrap. "
-              + "Default is a predefined list.",
+          "Comma separated enode URLs for P2P discovery bootstrap, or HTTP/HTTPS URLs containing "
+              + "line-separated enode URLs. Default is a predefined list.",
       split = ",",
       arity = "0..*")
   void setBootNodes(final List<String> values) {
-    if (values != null && !values.isEmpty()) {
-      bootNodes = values;
+    if (values == null || values.isEmpty()) {
+      bootNodes = new ArrayList<>();
+      return;
     }
-  
+    if (values == null) {
+      bootNodes = null;
+      return;
+    }
+    bootNodes = new ArrayList<>();
 
-  bootNodes = new ArrayList<>();
-  for (String value : values) {
-    value = value.trim();
-    if (value.startsWith("enode://")) {
-      bootNodes.add(value);
-    } else if (value.startsWith("http://") || value.startsWith("https://")) {
-      // If the value is a URL, parse it and extract the enode URL
-      try {
+    for (String value : values) {
+      value = value.trim();
+      if (value.startsWith("enode://")) {
+        bootNodes.add(value);
+      } else if (value.startsWith("http://") || value.startsWith("https://")) {
+        // If the value is a URL, parse it and extract the enode URL
         try {
-          List<String> loadedEnodes = loadEnodeUrlsFromRemoteUrl(value);
-          bootNodes.addAll(loadedEnodes);
-        } catch (final IOException ioException) {
+          try {
+            List<String> loadedEnodes = loadEnodeUrlsFromRemoteUrl(value);
+            bootNodes.addAll(loadedEnodes);
+          } catch (final IOException ioException) {
+            throw new CommandLine.ParameterException(
+                new CommandLine(this),
+                "Error loading enode URLs from '" + value + "': " + ioException.getMessage(),
+                ioException);
+          }
+        } catch (final IllegalArgumentException e) {
           throw new CommandLine.ParameterException(
               new CommandLine(this),
-              "Error loading enode URLs from '" + value + "': " + ioException.getMessage(),
-              ioException);
+              "Invalid URL supplied to '--bootnodes': " + value + ". " + e.getMessage());
         }
-      } catch (final IllegalArgumentException e) {
+      } else {
         throw new CommandLine.ParameterException(
             new CommandLine(this),
-            "Invalid URL supplied to '--bootnodes': " + value + ". " + e.getMessage());
+            "Invalid value supplied to '--bootnodes': "
+                + value
+                + ". Must be an enode URL or a valid HTTP/HTTPS URL.");
       }
-    } else {
-      throw new CommandLine.ParameterException(
-          new CommandLine(this),
-          "Invalid value supplied to '--bootnodes': " + value
-              + ". Must be an enode URL or a valid HTTP/HTTPS URL.");
     }
   }
-}
-    /**
+
+  /**
    * Loads enode URLs from a remote HTTP/HTTPS URL.
    *
    * @param url The URL to load from.
    * @return A list of enode URLs.
    * @throws IOException If there is an error reading from the URL.
    */
-
   private List<String> loadEnodeUrlsFromRemoteUrl(String url) throws IOException {
     List<String> enodes = new ArrayList<>();
-    try (BufferedReader reader = new BufferedReader(
-        new InputStreamReader(new java.net.URL(url).openStream(), StandardCharsets.UTF_8))) {
+    try (BufferedReader reader =
+        new BufferedReader(
+            new InputStreamReader(new java.net.URL(url).openStream(), StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
         line = line.trim();
@@ -157,7 +162,8 @@ public class P2PDiscoveryOptions implements CLIOptions<P2PDiscoveryConfiguration
     return enodes;
   }
 
-  public List<String> bootNodes = new ArrayList<>();
+  public List<String> bootNodes = null;
+
   /**
    * Gets the list of boot nodes.
    *
